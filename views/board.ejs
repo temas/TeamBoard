@@ -1,0 +1,12 @@
+<div id='states'>
+  <% states.forEach(function(state) { %>
+  <div class='state-col'>
+    <div class='title'><%= state.title %><span class='stateCount'></span></div>
+    <ul>
+    <% state.cards.forEach(function(card) { %>
+      <%- partial("card", card) %>
+    <% }) %>
+    </ul>
+  </div>
+  <% }) %>
+</div>

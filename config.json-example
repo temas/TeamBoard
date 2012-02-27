@@ -1,0 +1,38 @@
+{
+  "appId":"a github app id to run as",
+  "appSecret":"the github app secret",
+  "runAs":"the github username to cache as",
+  "projectLabel":"the label on issues that are primary projects",
+  "dbPath":"teamboard.db",
+  "trackers":[
+    {
+      "project":"LockerProject",
+      "repos":[
+        "Locker"
+      ],
+      "primary":"Locker"
+    }
+  ],
+  "states":[
+    {
+      "label":"design",
+      "title":"Design"
+    },
+    {
+      "label":"readyeng",
+      "title":"Ready"
+    },
+    {
+      "label":"analysis",
+      "title":"Analysis"
+    },
+    {
+      "label":"dev",
+      "title":"Development"
+    },
+    {
+      "label":"deploy",
+      "title":"Deployment"
+    }
+  ]
+}

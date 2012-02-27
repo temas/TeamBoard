@@ -1,0 +1,144 @@
+<!doctype html>
+<html>
+  <head>
+    <title>TeamBoard</title>
+    <link rel="stylesheet" href="/css/auth-buttons.css" type="text/css" media="screen" charset="utf-8"></link>
+    <style type="text/css">
+
+      *, html, body {
+        font-family:Helvetica,Verdana,Arial,sans-serif;
+        vertical-align:top;
+      }
+      #states {
+        white-space:nowrap;
+        overflow-x:scroll;
+        overflow-y:auto;
+      }
+      .state-col {
+        display:inline-block;
+        border:1px solid #aaa;
+        border-radius:5px;
+        background-color:#eee;
+        width:400px;
+        padding:4px;
+        min-height:400px;
+        top:0;
+
+        transition-property:width;
+        transition-duration:250ms;
+        transition-timing-function:linear;
+
+        -webkit-transition-property:width;
+        -webkit-transition-duration:250ms;
+        -webkit-transition-timing-function:linear;
+      }
+      #loginForm {
+        position:absolute;
+        right:10px;
+        top:10px;
+      }
+      .state-col ul {
+        margin-bottom:10px;
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+        min-height:40px;
+      }
+      .state-col .title {
+        border-bottom:1px solid #aaa;
+        text-align:center;
+        font-size:14px;
+        font-weight:bold;
+      }
+      .card {
+        margin:4px;
+        padding:8px;
+        border:1px solid #aaa;
+        background-color:white;
+        font-size:11px;
+        height:40px;
+        white-space:normal;
+      }
+      .placeholder-card {
+        border:1px dotted #aaa;
+        height:40px
+      }
+      .card span.number {
+        color:#aaa;
+        font-size:12px;
+      }
+      .card span.title {
+        text-align:left;
+        font-size:12px;
+        border-bottom:0;
+        font-weight:normal;
+      }
+      .ui-sortable-placeholder {
+        border: 1px dotted black;
+        opacity:0.8;
+        visibility: visible !important;
+        height: 40px !important;
+      }
+      .ui-sortable-placeholder * {
+        visibility: hidden;
+      }
+      .collapsed {
+        width:10px;
+        min-width:10px;
+      }
+      .collapsed .title {
+        -webkit-transform: rotate(-90deg); 
+        -moz-transform: rotate(-90deg);
+        transform: rotate(-90deg);
+        text-align:left;
+        width:10px;
+        top:200px;
+        position:relative;
+        border-bottom:0px;
+      }
+      .collapsed ul {
+        display:none
+      }
+
+      .stateCount {
+        margin-left:5px;
+      }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript" charset="utf-8"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.16/jquery-ui.min.js" type="text/javascript" charset="utf-8"></script>
+    <script type="text/javascript" charset="utf-8">
+      $(function() {
+        function updateCounts() {
+          $(".state-col").each(function(idx, col) {
+            $(col).find(".stateCount").text("(" + $(col).find("li").length + ")")
+          });
+        }
+        updateCounts();
+        $(".card").dblclick(function() {
+          alert("show the card #" + $(this).find(".number").text().substring(1));
+        });
+        $(".state-col .title").click(function() {
+          $(this).parent().toggleClass("collapsed");
+          // TODO:  On collapse show the count
+        });
+        $(".state-col ul").sortable({
+          connectWith:".state-col ul",
+          revert:true,
+          forcePlaceholderSize:true,
+          receive:function(ev, ui) {
+            // TODO: Show the checklist if there is one, save the updated info
+          }
+        });
+        $(".state-col ul").disableSelection();
+      })
+    </script>
+  </head>
+  <body>
+    <%- partial("login") %>
+    <h1>Team Board</h1>
+    <%- body %>
+    <% if (admin) { %>
+      <%- partial("admin") %>
+    <% } %>
+  </body>
+</html>

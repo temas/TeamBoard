@@ -1,0 +1,9 @@
+<div id='loginForm'>
+<% if (everyauth.loggedIn) { %>
+  <span>Welcome back <%= everyauth.github.user.login %></span>
+<% } else { %>
+    <a class='btn-auth btn-github large' href='/auth/github'>
+      Sign in with GitHub
+    </a>
+<% } %>
+</div>
