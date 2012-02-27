@@ -1,7 +1,7 @@
 This is an issue/ticket project manager that sits on top of github.  It actually uses issues to track issues in a meta way.  Largely inspired by Huboard.
 
-== Configuration ==
-There are two primary configuration settings that must be set in the config.json.
+## Configuration ##
+The first few settings of the configuration are self explanatory.  The other two sections are a bit tricky.
 
 First is the ```trackers``` which is a list of the issue trackers that should be included in the overall project tracker.  Each project on github can list as many of it's repos as it wants and may designate which repo is the primary one to put the internal issues on.
 
