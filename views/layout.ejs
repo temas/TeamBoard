@@ -63,7 +63,7 @@
         border:1px dotted #aaa;
         height:40px
       }
-      .card span.number {
+      .number {
         color:#aaa;
         font-size:12px;
       }
@@ -103,6 +103,71 @@
       .stateCount {
         margin-left:5px;
       }
+
+      #cardDetails {
+        background:white;
+        display:none;
+        box-shadow:0 0 10px rgba(0, 0, 0, 0.5);
+        position:absolute;
+        top:5%;
+        left:5%;
+        width:90%;
+        padding:20px;
+        padding-top:0px;
+        margin-bottom:10px;
+      }
+
+      .closeCard {
+        position:absolute;
+        right:10px;
+        top:10px;
+        width:2em;
+        height:2em;
+        border-radius:1em;
+        border:2px solid #ccc;
+        background-color:#eee;
+        color:#ccc;
+        font-weight:bold;
+        text-align:center;
+        font-size:12px;
+      }
+      .closeCard:hover {
+        background:white;
+        color:black;
+      }
+      .closeCard p {
+        margin-top:1px;
+        display:inline-block;
+      }
+      #cardDetails .number {
+        font-size:18px;
+        text-decoration:none;
+      }
+      #cardDetails .number {
+        font-size:18px;
+        text-decoration:none;
+      }
+      #cardDetails a.number:hover {
+        text-decoration:underline;
+      }
+      #cardDetails p img {
+        max-width:90%;
+        display:block;
+        clear:both;
+        margin:10px;
+      }
+      #cardDetails img.avatar {
+        width:24px;
+        height:24px;
+      }
+      .comment {
+        margin-top:5px;
+        line-height:24px;
+      }
+      #cardDetails .details {
+        line-height:24px;
+        color:#aaa;
+      }
     </style>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript" charset="utf-8"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.16/jquery-ui.min.js" type="text/javascript" charset="utf-8"></script>
@@ -114,10 +179,14 @@
           });
         }
         updateCounts();
-        $(".card").dblclick(function() {
-          alert("show the card #" + $(this).find(".number").text().substring(1));
+        $("#cardDetails").on("click", ".closeCard", function() {
+          $("#cardDetails").hide();
         });
-        $(".state-col .title").click(function() {
+        $(".card").dblclick(function() {
+          $("#cardDetails").show();
+          $("#cardDetails").load("/card/" + $(this).find(".number").text().substring(1));
+        });
+        $(".state-col div.title").click(function() {
           $(this).parent().toggleClass("collapsed");
           // TODO:  On collapse show the count
         });

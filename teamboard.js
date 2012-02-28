@@ -33,81 +33,133 @@ GithubUpdater.prototype.init = function(callback) {
   var self = this;
   openDb(function(error) {
     if (error) return callback(error);
-    githubDb.execute("CREATE TABLE IF NOT EXISTS Issues(id INT PRIMARY KEY, json TEXT, lastUpdated TEXT, isProject INT, state TEXT)", function(error) {
-      return callback(error);
+    async.forEachSeries([
+      "CREATE TABLE IF NOT EXISTS Issues(id INT PRIMARY KEY, json TEXT, lastUpdated TEXT, isProject INT, state TEXT)",
+      "CREATE TABLE IF NOT EXISTS Comments(id INT PRIMARY KEY, issue_id INT, json TEXT)"
+    ], function(query, cb) {
+        githubDb.execute(query, cb);
+    }, function() {
+      callback() 
     });
   });
 };
 GithubUpdater.prototype.start = function() {
   var self = this;
   if (this.updating) return;
-  githubDb.execute(" SELECT lastUpdated FROM Issues ORDER BY lastUpdated DESC LIMIT 1", function(error, rows) {
+  console.log("Github updater starting.");
+  githubDb.execute("SELECT lastUpdated FROM Issues ORDER BY lastUpdated DESC LIMIT 1", function(error, rows) {
     if (rows.length > 0) {
       self.lastUpdated = rows[0].lastUpdated;
     }
     console.log("Should start from %s", self.lastUpdated);
-    self.pageIssues(0);
+    self.cacheIssues();
   });
 };
-GithubUpdater.prototype.pageIssues = function(page) {
+GithubUpdater.prototype.pageRequest = function(options, eachCb, finalCb) {
   var self = this;
+  var page = options.qs.page || 0;
   console.log("Processing page %d", page);
-  var options = {
-    sort:"updated",
-    access_token:this.accessToken,
-    per_page:100
-  };
-  if (page > 0) {
-    options.page = page;
-  }
-  if (this.lastUpdated) {
-    options.since = this.lastUpdated;
-  }
-  request.get({url:"https://api.github.com/repos/LockerProject/Locker/issues", qs:options, json:true}, function(error, result, body) {
+  request(options, function(error, result, body) {
     if (error) {
-      console.log("ERROR getting issues: ");
-      console.log(error);
-      return;
+      console.log("Github paging error: %s", error);
+      return finalCb(error);
     }
-    // Process all our issues and cache them
-    githubDb.prepare("INSERT OR REPLACE INTO Issues VALUES(?, ?, ?, ?, ?)", function(error, statement) {
-      async.forEachSeries(body, function(issue, cb) {
-        console.log("Processing " + issue.number);
-        // Loop over the issues and match any states and cache it
-        var isProject = false;
-        var state;
-        issue.labels.forEach(function(label) {
-          if (label.name == config.projectLabel) isProject = true;
-          config.states.forEach(function(stateLabel) {
-            if (stateLabel.label == label.name) state = stateLabel.label;
-          });
-        });
-        statement.bindArray([issue.number, JSON.stringify(issue), issue.updated_at, isProject ? 1 : 0, state], function() {
-          statement.step(function(error, row) {
-            statement.reset();
-            return cb();
-          });
-        });
-      }, function() {
-        // Clean up our statement
-        statement.finalize(function(err) {
-          // See if we're on the last page and paginate if not
-          if (!result.headers.link) result.headers.link = "";
-          var lastPage;
-          result.headers.link.split(",").forEach(function(link) {
-            var matches = link.match(/<.*[&?]page=(\d+).*>;\s+rel="last"/);
-            if (matches) lastPage = Number(matches[1]);
-          });
-          if (lastPage &&  (++page < lastPage)) {
-            // Using a nextTick here so we don't explode the stack on long processing
-            process.nextTick(function() {
-              self.pageIssues(page);
-            });
-          } else {
-            console.log("Done paging issues");
-          }
+    // Iterate over them all
+    async.forEachSeries(body, eachCb, finalCb);
+    // See if we're on the last page and paginate if not
+    if (!result.headers.link) result.headers.link = "";
+    var lastPage;
+    result.headers.link.split(",").forEach(function(link) {
+      var matches = link.match(/<.*[&?]page=(\d+).*>;\s+rel="last"/);
+      if (matches) lastPage = Number(matches[1]);
+    });
+    if (lastPage &&  (++page < lastPage)) {
+      // Using a nextTick here so we don't explode the stack on long processing
+      process.nextTick(function() {
+        options.qs.page = page;
+        self.pageRequest(options, eachCb, finalCb);
+      });
+    } else {
+      console.log("Done paging issues");
+    }
+  });
+};
+GithubUpdater.prototype.cacheComments = function(issueId, cb) {
+  var self = this;
+  var options = {
+    method:"get",
+    url:"https://api.github.com/repos/LockerProject/Locker/issues/" + issueId + "/comments",
+    qs:{
+      page:0,
+      sort:"updated",
+      access_token:this.accessToken,
+      per_page:100
+    },
+    json:true
+  };
+  if (this.lastUpdated) {
+    options.qs.since = this.lastUpdated;
+  }
+  githubDb.prepare("INSERT OR REPLACE INTO Comments VALUES(?, ?, ?)", function(error, statement) {
+    self.pageRequest(options, function(comment, stepCb) {
+      statement.bindArray([comment.id, issueId, JSON.stringify(comment)], function() {
+        statement.step(function(error, row) {
+          statement.reset();
+          stepCb();
         });
       });
+    }, function(error) {
+      statement.finalize(function() {
+        cb();
+      });
+    });
+  });
+};
+GithubUpdater.prototype.cacheIssues = function(cb) {
+  cb = cb || function() { }
+  var self = this;
+  var options = {
+    method:"get",
+    url:"https://api.github.com/repos/LockerProject/Locker/issues",
+    qs:{
+      page:0,
+      sort:"updated",
+      access_token:this.accessToken,
+      per_page:100
+    },
+    json:true
+  };
+  if (this.lastUpdated) {
+    options.qs.since = this.lastUpdated;
+  }
+  githubDb.prepare("INSERT OR REPLACE INTO Issues VALUES(?, ?, ?, ?, ?)", function(error, statement) {
+    if (error) {
+      console.log("ERROR preparing for issues: %s", error);
+      return;
+    }
+    self.pageRequest(options, function(issue, stepCb) {
+      // Process all our issues and cache them
+      console.log("Processing " + issue.number);
+      // Loop over the issues and match any states and cache it
+      var isProject = false;
+      var state;
+      issue.labels.forEach(function(label) {
+        if (label.name == config.projectLabel) isProject = true;
+        config.states.forEach(function(stateLabel) {
+          if (stateLabel.label == label.name) state = stateLabel.label;
+        });
+      });
+      statement.bindArray([issue.number, JSON.stringify(issue), issue.updated_at, isProject ? 1 : 0, state], function() {
+        statement.step(function(error, row) {
+          self.cacheComments(issue.number, function() {
+            statement.reset();
+            stepCb();
+          });
+        });
+      });
+    }, function() {
+      // Clean up our statement
+      statement.finalize(cb);
     });
   });
 };
@@ -119,6 +171,7 @@ function checkGithubUpdater() {
         console.error("Error starting the GitHub updater: %s", err);
         return;
       }
+    console.log("HERE2");
       updater.start();
     });
   }
@@ -168,10 +221,18 @@ everyauth.helpExpress(app);
 
 app.get("/", function(req, res) {
   openDb(function(error) {
+    if (error) {
+      console.error(error);
+      return res.send(500);
+    }
     async.forEachSeries(config.states, function(state, cb) {
       state.cards = [];
       console.log("Getting cards for state " + state.label);
       githubDb.execute("SELECT * FROM Issues WHERE state=?", [state.label], function(error, rows) {
+        if (error) {
+          console.error(error);
+          return res.send(500);
+        }
         console.log(state.label + ":" + rows.length);
         rows.forEach(function(row) {
           var issue = JSON.parse(row.json);
@@ -182,6 +243,29 @@ app.get("/", function(req, res) {
     }, function() {
       console.dir(config.states);
       res.render("board.ejs", {states:config.states, admin:((req.session && req.session.admin) ? true : false)});
+    });
+  });
+});
+
+app.get("/card/:id", function(req, res) {
+  openDb(function(error) {
+    if (error) {
+      console.error(error);
+      return res.send(500);
+    }
+    githubDb.execute("SELECT * FROM Issues WHERE id=? LIMIT 1", [req.params.id], function(err, rows) {
+      if (err || !rows || rows.length == 0) {
+        console.log("Invalid card result: %s", err);
+        return res.send(500);
+      }
+      var issue = JSON.parse(rows[0].json);
+      githubDb.execute("SELECT* FROM Comments WHERE issue_id=?", [req.params.id], function(err, commentsRows) {
+        comments = [];
+        commentsRows.forEach(function(commentRow) {
+          comments.push(JSON.parse(commentRow.json));
+        });
+        res.render("cardDetails.ejs", {issue:issue, comments:comments, layout:false});
+      });
     });
   });
 });
