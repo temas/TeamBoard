@@ -1,0 +1,27 @@
+<button class='closeCard'><p>X</p></button>
+<h1><%= issue.title %></h1>
+<div class='details'>
+  Github Issue <a class='number' href='<%=issue.html_url%>'>#<%= issue.number %></a>
+  <% if (issue.user) { %>
+    Submitted by <img class='avatar' src='<%= issue.user.avatar_url%>' />
+  <% } %>
+  <% if (issue.assignee) { %>
+    assigned to <img class='avatar' src='<%= issue.assignee.avatar_url %>' />
+  <% } %>
+</div>
+<p>
+  <%- issue.body %>
+</p>
+<% if (comments && comments.length > 0) { %>
+  <hr />
+  <% for (var i = 0; i < comments.length; ++i) { %>
+    <div class='comment'><img class='avatar' src='<%= comments[i].user.avatar_url %>' /> &rarr; <span><%- comments[i].body %></span></div>
+  <% } %>
+<% } %>
+<!--
+<hr />
+<br />
+<%= JSON.stringify(issue) %>
+<br />
+<%= JSON.stringify(comments) %>
+-->
