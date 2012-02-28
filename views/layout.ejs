@@ -168,6 +168,9 @@
         line-height:24px;
         color:#aaa;
       }
+      .altBg {
+        background-color:#eee;
+      }
     </style>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript" charset="utf-8"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.16/jquery-ui.min.js" type="text/javascript" charset="utf-8"></script>
@@ -182,13 +185,15 @@
         $("#cardDetails").on("click", ".closeCard", function() {
           $("#cardDetails").hide();
         });
+        $(document).keyup(function(e) {
+          if (e.keyCode == 27) $("#cardDetails").hide();
+        });
         $(".card").dblclick(function() {
           $("#cardDetails").show();
-          $("#cardDetails").load("/card/" + $(this).find(".number").text().substring(1));
+          $("#cardDetails").load("/card/" + $(this).attr("data-card-id"));
         });
         $(".state-col div.title").click(function() {
           $(this).parent().toggleClass("collapsed");
-          // TODO:  On collapse show the count
         });
         $(".state-col ul").sortable({
           connectWith:".state-col ul",
@@ -196,6 +201,12 @@
           forcePlaceholderSize:true,
           receive:function(ev, ui) {
             // TODO: Show the checklist if there is one, save the updated info
+            /*
+            var toState = $(this).attr("data-index");
+            var fromState = $(ui.sender).attr("data-index");
+            var number = $(ui.item[0]).attr("data-card-id");
+            */
+            $.getJSON("/move/" + number + "/" + toState);
           }
         });
         $(".state-col ul").disableSelection();

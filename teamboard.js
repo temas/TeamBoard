@@ -270,6 +270,27 @@ app.get("/card/:id", function(req, res) {
   });
 });
 
+// Move :id to the state :state as an index into config.states
+app.get("/move/:id/:state", function(req, res) {
+  openDb(function(error) {
+    if (error) {
+      console.error(error);
+      return res.send(500);
+    }
+    githubDb.execute("SELECT * FROM Issues WHERE id=? LIMIT 1", [req.params.id], function(err, rows) {
+      if (err || !rows || rows.length != 1) {
+        console.error("Invalid issue for %d", req.params.id);
+        return res.send(500);
+      }
+      request({method:"delete", "url":issue.url + "/labels/" + rows[0].state, json:true}, function(req, res) {
+        request({method:"post", "url":issue.url + "/labels", json:[config.states[req.params.state]]}, function(req, res) {
+          checkGithubUpdater();
+        });
+      });
+    });
+  });
+});
+
 app.get("/checkUpdater", function(req, res) {
   if (!req.session.admin) {
     return res.send("Not an admin", 401);

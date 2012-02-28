@@ -15,7 +15,7 @@
 <% if (comments && comments.length > 0) { %>
   <hr />
   <% for (var i = 0; i < comments.length; ++i) { %>
-    <div class='comment'><img class='avatar' src='<%= comments[i].user.avatar_url %>' /> &rarr; <span><%- comments[i].body %></span></div>
+    <div class='comment<%=((i % 2) ? " altBg" : "")%>'><img class='avatar' src='<%= comments[i].user.avatar_url %>' /> &rarr; <span><%- comments[i].body %></span></div>
   <% } %>
 <% } %>
 <!--

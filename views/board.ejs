@@ -1,14 +1,14 @@
 <div id='states'>
-  <% states.forEach(function(state) { %>
+  <% for (var i = 0; i < states.length; ++i) { var state = states[i]; %>
   <div class='state-col'>
     <div class='title'><%= state.title %><span class='stateCount'></span></div>
-    <ul>
+    <ul data-index='<%=i%>'>
     <% state.cards.forEach(function(card) { %>
       <%- partial("card", card) %>
     <% }) %>
     </ul>
   </div>
-  <% }) %>
+  <% } %>
 </div>
 <div id='cardDetails'>
 </div>
