@@ -22,7 +22,7 @@ try {
 function openDb(callback) {
   githubDb.open(config.dbPath, function(error) {
     githubDb.executeScript([
-      "CREATE TABLE IF NOT EXISTS Config('key' STRING, 'value' STRING)",
+      "CREATE TABLE IF NOT EXISTS Config(key STRING, value STRING)",
       ""
     ].join(";"), function(err) {
       return callback(err);
@@ -44,7 +44,7 @@ Github.prototype.init = function(callback) {
     if (error) return callback(error);
     githubDb.executeScript([
       "CREATE TABLE IF NOT EXISTS Issues(id STRING PRIMARY KEY, json TEXT, lastUpdated TEXT, isProject INT, state TEXT)",
-      "CREATE TABLE IF NOT EXISTS Comments(id INT PRIMARY KEY, issue_id STRING, json TEXT)",
+      "CREATE TABLE IF NOT EXISTS Comments(id STRING PRIMARY KEY, issue_id STRING, json TEXT)",
       "CREATE TABLE IF NOT EXISTS ProjectTasks(id STRING PRIMARY KEY, project STRING, task STRING, required INT)",
       ""
     ].join(";"), function(error) {
@@ -223,7 +223,7 @@ Github.prototype.cacheComments = function(issue, cb) {
           githubDb.execute("INSERT OR REPLACE INTO ProjectTasks VALUES(?, ?, ?, ?)", [crypto.createHash("sha1").update(issueId).update(id).digest("hex"), issueId, id, required], forCb); 
       },
       function(err) {
-        statement.bindArray([comment.id, issueId, JSON.stringify(comment)], function() {
+        statement.bindArray([issueId + "/" + comment.id, issueId, JSON.stringify(comment)], function() {
           statement.step(function(error, row) {
             statement.reset();
             stepCb();
@@ -361,12 +361,12 @@ app.get("/", function(req, res) {
         //console.log(state.label + ":" + rows.length);
         rows.forEach(function(row) {
           var issue = JSON.parse(row.json);
-          state.cards.push({title:issue.title, id:issue.id, number:issue.number});
+          state.cards.push({title:issue.title, id:row.id, number:issue.number});
         });
         cb();
       });
     }, function() {
-      //console.dir(config.states);
+      console.log(util.inspect(config.states, true, 4));
       res.render("board.ejs", {states:config.states, admin:((req.session && req.session.admin) ? true : false)});
     });
   });
@@ -449,17 +449,6 @@ app.post("/create", function(req, res) {
     });
   }
 });
-
-/*
-app.get("/checkUpdater", function(req, res) {
-  if (!req.session.admin) {
-    return res.send("Not an admin", 401);
-  }
-  console.log("Checking the updater");
-  checkGithub();
-  res.send("true");
-});
-*/
 
 checkGithub(function(err) {
   if (err) {
