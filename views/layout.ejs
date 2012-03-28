@@ -201,11 +201,10 @@
           forcePlaceholderSize:true,
           receive:function(ev, ui) {
             // TODO: Show the checklist if there is one, save the updated info
-            /*
             var toState = $(this).attr("data-index");
             var fromState = $(ui.sender).attr("data-index");
             var number = $(ui.item[0]).attr("data-card-id");
-            */
+            console.log("move " + number + " to " + toState);
             $.getJSON("/move/" + number + "/" + toState);
           }
         });

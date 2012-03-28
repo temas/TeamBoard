@@ -5,8 +5,9 @@ var sqlite = require("sqlite-fts");
 var request = require("request");
 var sqliteStore = require("./connect-sqlite")(express);
 var async = require("async");
+var util = require("util");
+var crypto = require("crypto");
 
-var githubAccessToken; // We keep the admin token for doing our primary updates, but we'll use the session token for everything else
 var updater;
 var githubDb = new sqlite.Database();
 
@@ -20,30 +21,38 @@ try {
 
 function openDb(callback) {
   githubDb.open(config.dbPath, function(error) {
-    return callback(error);
+    githubDb.executeScript([
+      "CREATE TABLE IF NOT EXISTS Config('key' STRING, 'value' STRING)",
+      ""
+    ].join(";"), function(err) {
+      return callback(err);
+    });
   });
 }
 
-function GithubUpdater(accessToken) {
+function Github(accessToken) {
   this.updating = false;
   this.lastUpdated = undefined;
   this.accessToken = accessToken;
+
+  this.apiBase = "https://api.github.com";
+  //this.apiBase = "http://lvh.me:5555";
 }
-GithubUpdater.prototype.init = function(callback) {
+Github.prototype.init = function(callback) {
   var self = this;
   openDb(function(error) {
     if (error) return callback(error);
-    async.forEachSeries([
-      "CREATE TABLE IF NOT EXISTS Issues(id INT PRIMARY KEY, json TEXT, lastUpdated TEXT, isProject INT, state TEXT)",
-      "CREATE TABLE IF NOT EXISTS Comments(id INT PRIMARY KEY, issue_id INT, json TEXT)"
-    ], function(query, cb) {
-        githubDb.execute(query, cb);
-    }, function() {
+    githubDb.executeScript([
+      "CREATE TABLE IF NOT EXISTS Issues(id STRING PRIMARY KEY, json TEXT, lastUpdated TEXT, isProject INT, state TEXT)",
+      "CREATE TABLE IF NOT EXISTS Comments(id INT PRIMARY KEY, issue_id STRING, json TEXT)",
+      "CREATE TABLE IF NOT EXISTS ProjectTasks(id STRING PRIMARY KEY, project STRING, task STRING, required INT)",
+      ""
+    ].join(";"), function(error) {
       callback() 
     });
   });
 };
-GithubUpdater.prototype.start = function() {
+Github.prototype.start = function() {
   var self = this;
   if (this.updating) return;
   console.log("Github updater starting.");
@@ -55,7 +64,84 @@ GithubUpdater.prototype.start = function() {
     self.cacheIssues();
   });
 };
-GithubUpdater.prototype.pageRequest = function(options, eachCb, finalCb) {
+Github.prototype.getLabels = function(user, repo, cbDone) {
+  request({url:this.apiBase + "/repos/" + user + "/" + repo + "/labels", json:true}, function(error, resp, body) {
+    cbDone(error ? error : body);
+  });
+};
+// label must be {name:name, color:hexColor}
+Github.prototype.createLabel = function(user, repo, label, cbDone) {
+  if (label.color[0] == "#") label.color = label.color.slice(1);
+  request({method:"post", url:this.apiBase + "/repos/" + user + "/" + repo + "/labels", qs:{access_token:this.accessToken}, json:label}, function(error, resp, body) {
+    console.dir(body);
+    cbDone(error ? error : "");
+  });
+};
+Github.prototype.createIssue = function(args, cbDone) {
+  if (!args.title) {
+    return cbDone(new Error("No title was specified"));
+  }
+
+  var createArgs = {
+    title:args.title
+  };
+  if (args.description) createArgs.body = args.description;
+  if (args.labels) createArgs.labels = args.labels;
+  if (args.milestone) createArgs.milestone = args.milestone;
+  if (args.assignee) createArgs.assignee = args.assignee;
+
+  console.log("POST TO: " + this.apiBase + "/repos/" + config.trackers[0].project + "/" + config.trackers[0].repos[0] + "/issues");
+  request({
+    url:this.apiBase + "/repos/" + config.trackers[0].project + "/" + config.trackers[0].repos[0] + "/issues",
+    qs:{access_token:args.accessToken},
+    method:"post",
+    json:createArgs
+  }, function(err, resp, body) {
+    console.error(err);
+    console.log(body);
+    console.log("%s", util.inspect(resp, true, 4));
+    if (err || resp.statusCode >= 400) return cbDone(err);
+    var issue = body;
+    // Process all our issues and cache them
+    console.log("Processing " + issue.url);
+    // Loop over the issues and match any states and cache it
+    var isProject = false;
+    var state;
+    if (!issue.labels) issue.labels = [];
+    issue.labels.forEach(function(label) {
+      if (label.name == config.projectLabel) isProject = true;
+      config.states.forEach(function(stateLabel) {
+        if (stateLabel.label == label.name) state = stateLabel.label;
+      });
+    });
+    githubDb.execute("INSERT OR REPLACE INTO Issues VALUES(?, ?, ?, ?, ?)", [crypto.createHash("sha1").update(issue.url).digest("hex"), JSON.stringify(issue), issue.updated_at, isProject ? 1 : 0, state], function() {
+      return cbDone();
+    });
+  });
+};
+Github.prototype.cacheIssue = function(issueUrl, cbDone) {
+  var self = this;
+  request({method:"get", url:issueUrl, qs:{access_token:this.accessToken}, json:true}, function(err, resp, body) {
+    if (err || resp.statusCode >= 400) return cbDone(err);
+    var issue = body;
+    // Process all our issues and cache them
+    console.log("Processing " + issue.url);
+    // Loop over the issues and match any states and cache it
+    var isProject = false;
+    var state;
+    if (!issue.labels) issue.labels = [];
+    issue.labels.forEach(function(label) {
+      if (label.name == config.projectLabel) isProject = true;
+      config.states.forEach(function(stateLabel) {
+        if (stateLabel.label == label.name) state = stateLabel.label;
+      });
+    });
+    githubDb.execute("INSERT OR REPLACE INTO Issues VALUES(?, ?, ?, ?, ?)", [crypto.createHash("sha1").update(issue.url).digest("hex"), JSON.stringify(issue), issue.updated_at, isProject ? 1 : 0, state], function() {
+      self.cacheComments(issue, cbDone);
+    });
+  });
+};
+Github.prototype.pageRequest = function(options, eachCb, finalCb) {
   var self = this;
   var page = options.qs.page || 0;
   console.log("Processing page %d", page);
@@ -84,11 +170,20 @@ GithubUpdater.prototype.pageRequest = function(options, eachCb, finalCb) {
     }
   });
 };
-GithubUpdater.prototype.cacheComments = function(issueId, cb) {
+var urlRegex = /^(?:(.*)\/(.*))?#(\d+)$/;
+Github.prototype.getCommentURL = function(arg, user, repo) {
+  var matches = arg.match(urlRegex);
+  if (matches) {
+    return "https://api.github.com/repos/" + (matches[1] ? matches[1] : user) + "/" + (matches[2] ? matches[2] : repo) + "/issues/" + matches[3];
+  }
+  return undefined
+};
+var tbRE = /TB-(.*)\((.*)\)/;
+Github.prototype.cacheComments = function(issue, cb) {
   var self = this;
   var options = {
     method:"get",
-    url:"https://api.github.com/repos/LockerProject/Locker/issues/" + issueId + "/comments",
+    url:this.apiBase + "/repos/" + config.trackers[0].project + "/" + config.trackers[0].repos[0] + "/issues/" + issue.number + "/comments",
     qs:{
       page:0,
       sort:"updated",
@@ -100,12 +195,39 @@ GithubUpdater.prototype.cacheComments = function(issueId, cb) {
   if (this.lastUpdated) {
     options.qs.since = this.lastUpdated;
   }
+  var issueId = crypto.createHash("sha1").update(issue.url).digest("hex");
   githubDb.prepare("INSERT OR REPLACE INTO Comments VALUES(?, ?, ?)", function(error, statement) {
     self.pageRequest(options, function(comment, stepCb) {
-      statement.bindArray([comment.id, issueId, JSON.stringify(comment)], function() {
-        statement.step(function(error, row) {
-          statement.reset();
-          stepCb();
+      var matches = comment.body.match(tbRE);
+      if (!matches) {
+        matches = [];
+      }
+      var i = 1;
+      async.whilst(
+        function() { return i < matches.length; },
+        function(forCb) {
+          var action = matches[i].toUpperCase();
+          var url = self.getCommentURL(matches[i + i], config.trackers[0].project, config.trackers[0].repos[0]);
+          console.log("Got match: " + action + " - " + url);
+          if (!url) {
+            i += 2;
+            return forCb();
+          }
+          var id = crypto.createHash("sha1").update(url).digest("hex");
+          var required = 0;
+
+          if (action == "REQUIRE") {
+            required = 1;
+          }
+          i += 2;
+          githubDb.execute("INSERT OR REPLACE INTO ProjectTasks VALUES(?, ?, ?, ?)", [crypto.createHash("sha1").update(issueId).update(id).digest("hex"), issueId, id, required], forCb); 
+      },
+      function(err) {
+        statement.bindArray([comment.id, issueId, JSON.stringify(comment)], function() {
+          statement.step(function(error, row) {
+            statement.reset();
+            stepCb();
+          });
         });
       });
     }, function(error) {
@@ -115,12 +237,12 @@ GithubUpdater.prototype.cacheComments = function(issueId, cb) {
     });
   });
 };
-GithubUpdater.prototype.cacheIssues = function(cb) {
+Github.prototype.cacheIssues = function(cb) {
   cb = cb || function() { }
   var self = this;
   var options = {
     method:"get",
-    url:"https://api.github.com/repos/LockerProject/Locker/issues",
+    url:this.apiBase + "/repos/" + config.trackers[0].project + "/" + config.trackers[0].repos[0] + "/issues",
     qs:{
       page:0,
       sort:"updated",
@@ -139,19 +261,20 @@ GithubUpdater.prototype.cacheIssues = function(cb) {
     }
     self.pageRequest(options, function(issue, stepCb) {
       // Process all our issues and cache them
-      console.log("Processing " + issue.number);
+      console.log("Processing " + issue.url);
       // Loop over the issues and match any states and cache it
       var isProject = false;
       var state;
+      if (!issue.labels) issue.labels = [];
       issue.labels.forEach(function(label) {
         if (label.name == config.projectLabel) isProject = true;
         config.states.forEach(function(stateLabel) {
           if (stateLabel.label == label.name) state = stateLabel.label;
         });
       });
-      statement.bindArray([issue.number, JSON.stringify(issue), issue.updated_at, isProject ? 1 : 0, state], function() {
+      statement.bindArray([crypto.createHash("sha1").update(issue.url).digest("hex"), JSON.stringify(issue), issue.updated_at, isProject ? 1 : 0, state], function() {
         statement.step(function(error, row) {
-          self.cacheComments(issue.number, function() {
+          self.cacheComments(issue, function() {
             statement.reset();
             stepCb();
           });
@@ -163,16 +286,25 @@ GithubUpdater.prototype.cacheIssues = function(cb) {
     });
   });
 };
-function checkGithubUpdater() {
-  if (!updater && githubAccessToken) {
-    updater = new GithubUpdater(githubAccessToken);
-    updater.init(function(err) {
-      if (err) {
-        console.error("Error starting the GitHub updater: %s", err);
-        return;
-      }
-    console.log("HERE2");
-      updater.start();
+function checkGithub(cbDone) {
+  if (!updater) {
+    openDb(function(err) {
+      githubDb.execute("SELECT value FROM Config WHERE key='githubAccessToken'", function(error, rows) {
+        if (error || rows.length != 1) {
+          if (error) console.error(error);
+          console.dir(rows);
+          return cbDone(new Error("No valid access token found"));
+        }
+        updater = new Github(rows[0].value);
+        updater.init(function(err) {
+          if (err) {
+            console.error("Error starting the GitHub updater: %s", err);
+            return;
+          }
+          updater.start();
+          cbDone();
+        });
+      });
     });
   }
 }
@@ -181,14 +313,15 @@ function checkGithubUpdater() {
 everyauth.debug = true;
 everyauth.github
   .moduleTimeout(10000)
+  .scope("repo")
   .appId(config.appId)
   .appSecret(config.appSecret)
   .findOrCreateUser(function(session, accessToken, accessTokenExtra, githubUserMetaData) {
+    console.log("%j", githubUserMetaData);
     session.githubToken = accessToken;
     if (githubUserMetaData.login == config.runAs) {
-      githubAccessToken = accessToken;
       session.admin = true
-      process.nextTick(checkGithubUpdater);
+      //process.nextTick(checkGithub);
     } else {
       session.admin = false;
     }
@@ -209,13 +342,6 @@ app.configure(function() {
     store:new sqliteStore
   }));
   app.use(everyauth.middleware());
-  app.use(function(req, res, next) {
-    // Make sure we keep our github access token updated
-    if (req.session && req.session.githubUser && req.session.githubUser.login == config.runAs && !githubAccessToken) {
-      githubAccessToken = req.session.githubToken;
-    }
-    next();
-  });
 });
 everyauth.helpExpress(app);
 
@@ -227,27 +353,27 @@ app.get("/", function(req, res) {
     }
     async.forEachSeries(config.states, function(state, cb) {
       state.cards = [];
-      console.log("Getting cards for state " + state.label);
+      //console.log("Getting cards for state " + state.label);
       githubDb.execute("SELECT * FROM Issues WHERE state=?", [state.label], function(error, rows) {
         if (error) {
-          console.error(error);
-          return res.send(500);
+          return cb();
         }
-        console.log(state.label + ":" + rows.length);
+        //console.log(state.label + ":" + rows.length);
         rows.forEach(function(row) {
           var issue = JSON.parse(row.json);
-          state.cards.push({title:issue.title, number:issue.number});
+          state.cards.push({title:issue.title, id:issue.id, number:issue.number});
         });
         cb();
       });
     }, function() {
-      console.dir(config.states);
+      //console.dir(config.states);
       res.render("board.ejs", {states:config.states, admin:((req.session && req.session.admin) ? true : false)});
     });
   });
 });
 
 app.get("/card/:id", function(req, res) {
+  console.log("Request for " + req.params.id);
   openDb(function(error) {
     if (error) {
       console.error(error);
@@ -272,6 +398,7 @@ app.get("/card/:id", function(req, res) {
 
 // Move :id to the state :state as an index into config.states
 app.get("/move/:id/:state", function(req, res) {
+  console.log("Moving a card");
   openDb(function(error) {
     if (error) {
       console.error(error);
@@ -282,24 +409,91 @@ app.get("/move/:id/:state", function(req, res) {
         console.error("Invalid issue for %d", req.params.id);
         return res.send(500);
       }
-      request({method:"delete", "url":issue.url + "/labels/" + rows[0].state, json:true}, function(req, res) {
-        request({method:"post", "url":issue.url + "/labels", json:[config.states[req.params.state]]}, function(req, res) {
-          checkGithubUpdater();
+      var issue = JSON.parse(rows[0].json);
+      var labels = [];
+      for (var i = 0; i < issue.labels.length; ++i) {
+        if (issue.labels[i].name == rows[0].state) continue;
+        labels.push(issue.labels[i].name);
+      }
+      labels.push(config.states[req.params.state].label);
+      request({method:"delete", "url":issue.url + "/labels/" + rows[0].state, qs:{access_token:req.session.githubToken},json:true}, function(error, resp, body) {
+        if (error) {
+          console.dir(error);
+          return res.redirect("/");
+        }
+        request({method:"post", "url":issue.url + "/labels", qs:{access_token:req.session.githubToken}, json:labels}, function(error, resp, body) {
+          if (error) {
+            console.dir(error);
+          }
+          updater.cacheIssue(issue.url, function(error) {
+            return res.redirect("/");
+          });
         });
       });
     });
   });
 });
 
+app.post("/create", function(req, res) {
+  if (!req.body["project-title"]) {
+    req.flash("error", "You did not specify a title");
+  } else {
+    var args = {
+      accessToken:req.session.githubToken,
+      title:req.body["project-title"],
+      labels:[config.states[0].label]
+    };
+    if (req.body["project-description"]) args.description = req.body["project-description"];
+    updater.createIssue(args, function() {
+      res.redirect("/");
+    });
+  }
+});
+
+/*
 app.get("/checkUpdater", function(req, res) {
   if (!req.session.admin) {
     return res.send("Not an admin", 401);
   }
   console.log("Checking the updater");
-  checkGithubUpdater();
+  checkGithub();
   res.send("true");
 });
+*/
 
-app.listen(8326, function() {
-  console.log("TeamBoard is listening!");
+checkGithub(function(err) {
+  if (err) {
+    console.error("Error: " + err);
+    return process.exit(1);
+  }
+  console.log("Checking configuration...");
+  async.forEach(config.trackers, function(tracker, cb) {
+    async.forEach(tracker.repos, function(repo, repoCb) {
+      updater.getLabels(tracker.project, repo, function(labels) {
+        async.forEach(config.states, function(state, stateCb) {
+          var hasState = false;
+          for (var i = 0; i < labels.length; ++i) {
+            if (labels[i].name == state.label) {
+              hasState = true;
+              break;
+            }
+          }
+          if (!hasState) {
+            console.log("Creating " + state.label + " state on " + tracker.project + "/" + repo);
+            updater.createLabel(tracker.project, repo, {name:state.label, color:state.color}, stateCb);
+          } else {
+            stateCb();
+          }
+        }, function() {
+          repoCb();
+        });
+      });
+    }, function() {
+      cb();
+    });
+  }, function(err) {
+    app.listen(8326, function() {
+      console.log("TeamBoard is listening!");
+    });
+  });
 });

@@ -1,6 +1,8 @@
 <div id='loginForm'>
 <% if (everyauth.loggedIn) { %>
+  <img src='https://secure.gravatar.com/avatar/<%= everyauth.github.user.gravatar_id %>?s=32' />
   <span>Welcome back <%= everyauth.github.user.login %></span>
+  <a href='/logout'>Logout</a>
 <% } else { %>
     <a class='btn-auth btn-github large' href='/auth/github'>
       Sign in with GitHub
