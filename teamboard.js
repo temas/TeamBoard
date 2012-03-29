@@ -475,7 +475,7 @@ checkGithub(function(err) {
       cb();
     });
   }, function(err) {
-    app.listen(8326, function() {
+    app.listen(process.env.PORT || 8326, function() {
       console.log("TeamBoard is listening!");
     });
   });
