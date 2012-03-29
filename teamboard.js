@@ -361,12 +361,19 @@ app.get("/", function(req, res) {
         //console.log(state.label + ":" + rows.length);
         rows.forEach(function(row) {
           var issue = JSON.parse(row.json);
-          state.cards.push({title:issue.title, id:row.id, number:issue.number});
+          var card = {title:issue.title, id:row.id, number:issue.number, tasks:[]};
+          githubDb.execute("SELECT * FROM ProjectTasks pt LEFT JOIN Issues i ON pt.task = i.id WHERE pt.project = ?", [row.id], function(taskError, taskRows) {
+            taskRows.forEach(function(taskRow) {
+              var task = JSON.parse(taskRow.json);
+              card.tasks.push({title:task.title, id:taskRow.id, number:task.number, tasks:[]});
+            });
+            state.cards.push(card);
+          });
         });
         cb();
       });
     }, function() {
-      console.log(util.inspect(config.states, true, 4));
+      console.log(util.inspect(config.states, false, 8));
       res.render("board.ejs", {states:config.states, admin:((req.session && req.session.admin) ? true : false)});
     });
   });
@@ -385,12 +392,17 @@ app.get("/card/:id", function(req, res) {
         return res.send(500);
       }
       var issue = JSON.parse(rows[0].json);
+      var card = {issue:issue, layout:false, comments:[], tasks:[]};
       githubDb.execute("SELECT* FROM Comments WHERE issue_id=?", [req.params.id], function(err, commentsRows) {
-        comments = [];
         commentsRows.forEach(function(commentRow) {
-          comments.push(JSON.parse(commentRow.json));
+          card.comments.push(JSON.parse(commentRow.json));
         });
-        res.render("cardDetails.ejs", {issue:issue, comments:comments, layout:false});
+          githubDb.execute("SELECT * FROM ProjectTasks pt LEFT JOIN Issues i ON pt.task = i.id WHERE pt.project = ?", [req.params.id], function(taskError, taskRows) {
+            taskRows.forEach(function(taskRow) {
+              card.tasks.push(JSON.parse(taskRow.json));
+            });
+            res.render("cardDetails.ejs", card);
+          });
       });
     });
   });

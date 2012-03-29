@@ -4,7 +4,7 @@
     <div class='title'><%= state.title %><span class='stateCount'></span></div>
     <ul data-index='<%=i%>'>
     <% state.cards.forEach(function(card) { %>
-      <%- partial("card", card) %>
+      <%- partial("card", {card:card}) %>
     <% }) %>
     </ul>
   </div>

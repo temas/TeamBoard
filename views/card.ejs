@@ -1,3 +1,4 @@
-<li data-card-id='<%= id %>' class='card'>
-  <span class='number'>#<%= number %></span> - <span class='title'><%= title %></span>
+<% if (!locals.cardClass) cardClass = "card"; %>
+<li data-card-id='<%= card.id %>' class='<%= cardClass %>'>
+  <span class='number'>#<%= card.number %></span> - <span class='title'><%= card.title %></span>
 </li>
