@@ -48,7 +48,7 @@ Github.prototype.init = function(callback) {
       "CREATE TABLE IF NOT EXISTS ProjectTasks(id STRING PRIMARY KEY, project STRING, task STRING, required INT)",
       ""
     ].join(";"), function(error) {
-      callback() 
+      callback();
     });
   });
 };
@@ -176,7 +176,7 @@ Github.prototype.getCommentURL = function(arg, user, repo) {
   if (matches) {
     return "https://api.github.com/repos/" + (matches[1] ? matches[1] : user) + "/" + (matches[2] ? matches[2] : repo) + "/issues/" + matches[3];
   }
-  return undefined
+  return undefined;
 };
 var tbRE = /TB-(.*)\((.*)\)/;
 Github.prototype.cacheComments = function(issue, cb) {
@@ -220,7 +220,7 @@ Github.prototype.cacheComments = function(issue, cb) {
             required = 1;
           }
           i += 2;
-          githubDb.execute("INSERT OR REPLACE INTO ProjectTasks VALUES(?, ?, ?, ?)", [crypto.createHash("sha1").update(issueId).update(id).digest("hex"), issueId, id, required], forCb); 
+          githubDb.execute("INSERT OR REPLACE INTO ProjectTasks VALUES(?, ?, ?, ?)", [crypto.createHash("sha1").update(issueId).update(id).digest("hex"), issueId, id, required], forCb);
       },
       function(err) {
         statement.bindArray([issueId + "/" + comment.id, issueId, JSON.stringify(comment)], function() {
@@ -238,7 +238,7 @@ Github.prototype.cacheComments = function(issue, cb) {
   });
 };
 Github.prototype.cacheIssues = function(cb) {
-  cb = cb || function() { }
+  cb = cb || function() { };
   var self = this;
   var options = {
     method:"get",
@@ -320,7 +320,7 @@ everyauth.github
     console.log("%j", githubUserMetaData);
     session.githubToken = accessToken;
     if (githubUserMetaData.login == config.runAs) {
-      session.admin = true
+      session.admin = true;
       //process.nextTick(checkGithub);
     } else {
       session.admin = false;
@@ -339,7 +339,7 @@ app.configure(function() {
   app.use(express.cookieParser());
   app.use(express.session({
     secret:"fhcregrnzobneqfrpergxrl",
-    store:new sqliteStore
+    store:new sqliteStore()
   }));
   app.use(everyauth.middleware());
 });
@@ -380,7 +380,7 @@ app.get("/card/:id", function(req, res) {
       return res.send(500);
     }
     githubDb.execute("SELECT * FROM Issues WHERE id=? LIMIT 1", [req.params.id], function(err, rows) {
-      if (err || !rows || rows.length == 0) {
+      if (err || !rows || rows.length === 0) {
         console.log("Invalid card result: %s", err);
         return res.send(500);
       }
