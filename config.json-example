@@ -2,6 +2,7 @@
   "appId":"a github app id to run as",
   "appSecret":"the github app secret",
   "runAs":"the github username to cache as",
+  "accessToken":"an accessToken for the runAs user",
   "projectLabel":"the label on issues that are primary projects",
   "dbPath":"teamboard.db",
   "trackers":[

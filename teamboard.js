@@ -288,23 +288,17 @@ Github.prototype.cacheIssues = function(cb) {
 };
 function checkGithub(cbDone) {
   if (!updater) {
-    openDb(function(err) {
-      githubDb.execute("SELECT value FROM Config WHERE key='githubAccessToken'", function(error, rows) {
-        if (error || rows.length != 1) {
-          if (error) console.error(error);
-          console.dir(rows);
-          return cbDone(new Error("No valid access token found"));
-        }
-        updater = new Github(rows[0].value);
-        updater.init(function(err) {
-          if (err) {
-            console.error("Error starting the GitHub updater: %s", err);
-            return;
-          }
-          updater.start();
-          cbDone();
-        });
-      });
+    if (!config.accessToken || config.accessToken.length === 0) {
+      return cbDone(new Error("No valid access token found"));
+    }
+    updater = new Github(config.accessToken);
+    updater.init(function(err) {
+      if (err) {
+        console.error("Error starting the GitHub updater: %s", err);
+        return;
+      }
+      updater.start();
+      cbDone();
     });
   }
 }
