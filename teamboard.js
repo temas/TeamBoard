@@ -144,7 +144,7 @@ Github.prototype.cacheIssue = function(issueUrl, cbDone) {
 Github.prototype.pageRequest = function(options, eachCb, finalCb) {
   var self = this;
   var page = options.qs.page || 0;
-  console.log("Processing page %d", page);
+  if (options.qs.page) console.log("Processing page %d", page);
   request(options, function(error, result, body) {
     if (error) {
       console.log("Github paging error: %s", error);
@@ -159,7 +159,7 @@ Github.prototype.pageRequest = function(options, eachCb, finalCb) {
       var matches = link.match(/<.*[&?]page=(\d+).*>;\s+rel="last"/);
       if (matches) lastPage = Number(matches[1]);
     });
-    if (lastPage &&  (++page < lastPage)) {
+    if (lastPage &&  (++page <= lastPage)) {
       // Using a nextTick here so we don't explode the stack on long processing
       process.nextTick(function() {
         options.qs.page = page;
@@ -196,46 +196,41 @@ Github.prototype.cacheComments = function(issue, cb) {
     options.qs.since = this.lastUpdated;
   }
   var issueId = crypto.createHash("sha1").update(issue.url).digest("hex");
-  githubDb.prepare("INSERT OR REPLACE INTO Comments VALUES(?, ?, ?)", function(error, statement) {
-    self.pageRequest(options, function(comment, stepCb) {
-      var matches = comment.body.match(tbRE);
-      if (!matches) {
-        matches = [];
-      }
-      var i = 1;
-      async.whilst(
-        function() { return i < matches.length; },
-        function(forCb) {
-          var action = matches[i].toUpperCase();
-          var url = self.getCommentURL(matches[i + i], config.trackers[0].project, config.trackers[0].repos[0]);
-          console.log("Got match: " + action + " - " + url);
-          if (!url) {
-            i += 2;
-            return forCb();
-          }
-          var id = crypto.createHash("sha1").update(url).digest("hex");
-          var required = 0;
-
-          if (action == "REQUIRE") {
-            required = 1;
-          }
+  self.pageRequest(options, function(comment, stepCb) {
+    var matches = comment.body.match(tbRE);
+    if (!matches) matches = [];
+    var i = 1;
+    async.whilst(
+      function() { return i < matches.length; },
+      function(forCb) {
+        var action = matches[i].toUpperCase();
+        var url = self.getCommentURL(matches[i + i], config.trackers[0].project, config.trackers[0].repos[0]);
+        console.log("Got match: " + action + " - " + url);
+        if (!url) {
           i += 2;
-          githubDb.execute("INSERT OR REPLACE INTO ProjectTasks VALUES(?, ?, ?, ?)", [crypto.createHash("sha1").update(issueId).update(id).digest("hex"), issueId, id, required], forCb);
+          return forCb();
+        }
+        var id = crypto.createHash("sha1").update(url).digest("hex");
+        var required = 0;
+
+        if (action == "REQUIRE") {
+          required = 1;
+        }
+        i += 2;
+        githubDb.execute(
+          "INSERT OR REPLACE INTO ProjectTasks VALUES(?, ?, ?, ?)",
+          [crypto.createHash("sha1").update(issueId).update(id).digest("hex"),
+           issueId, id, required],
+          forCb);
       },
       function(err) {
-        statement.bindArray([issueId + "/" + comment.id, issueId, JSON.stringify(comment)], function() {
-          statement.step(function(error, row) {
-            statement.reset();
-            stepCb();
-          });
-        });
-      });
-    }, function(error) {
-      statement.finalize(function() {
-        cb();
-      });
-    });
-  });
+        githubDb.execute("INSERT OR REPLACE INTO Comments VALUES(?, ?, ?)",
+          [issueId + "/" + comment.id, issueId, JSON.stringify(comment)],
+          stepCb
+        );
+      }
+    );
+  }, cb);
 };
 Github.prototype.cacheIssues = function(cb) {
   cb = cb || function() { };
@@ -255,6 +250,7 @@ Github.prototype.cacheIssues = function(cb) {
     options.qs.since = this.lastUpdated;
   }
   self.pageRequest(options, function(issue, stepCb) {
+    if (!issue) return process.nextTick(stepCb);
     // Process all our issues and cache them
     console.log("Processing " + issue.url);
     // Loop over the issues and match any states and cache it
@@ -274,7 +270,7 @@ Github.prototype.cacheIssues = function(cb) {
         self.cacheComments(issue, stepCb);
       }
     );
-  });
+  }, cb);
 };
 function checkGithub(cbDone) {
   if (!updater) {
