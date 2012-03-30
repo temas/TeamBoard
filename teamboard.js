@@ -254,36 +254,26 @@ Github.prototype.cacheIssues = function(cb) {
   if (this.lastUpdated) {
     options.qs.since = this.lastUpdated;
   }
-  githubDb.prepare("INSERT OR REPLACE INTO Issues VALUES(?, ?, ?, ?, ?)", function(error, statement) {
-    if (error) {
-      console.log("ERROR preparing for issues: %s", error);
-      return;
-    }
-    self.pageRequest(options, function(issue, stepCb) {
-      // Process all our issues and cache them
-      console.log("Processing " + issue.url);
-      // Loop over the issues and match any states and cache it
-      var isProject = false;
-      var state;
-      if (!issue.labels) issue.labels = [];
-      issue.labels.forEach(function(label) {
-        if (label.name == config.projectLabel) isProject = true;
-        config.states.forEach(function(stateLabel) {
-          if (stateLabel.label == label.name) state = stateLabel.label;
-        });
+  self.pageRequest(options, function(issue, stepCb) {
+    // Process all our issues and cache them
+    console.log("Processing " + issue.url);
+    // Loop over the issues and match any states and cache it
+    var isProject = false;
+    var state;
+    if (!issue.labels) issue.labels = [];
+    issue.labels.forEach(function(label) {
+      if (label.name == config.projectLabel) isProject = true;
+      config.states.forEach(function(stateLabel) {
+        if (stateLabel.label == label.name) state = stateLabel.label;
       });
-      statement.bindArray([crypto.createHash("sha1").update(issue.url).digest("hex"), JSON.stringify(issue), issue.updated_at, isProject ? 1 : 0, state], function() {
-        statement.step(function(error, row) {
-          self.cacheComments(issue, function() {
-            statement.reset();
-            stepCb();
-          });
-        });
-      });
-    }, function() {
-      // Clean up our statement
-      statement.finalize(cb);
     });
+    githubDb.execute("INSERT OR REPLACE INTO Issues VALUES(?, ?, ?, ?, ?)", [
+        crypto.createHash("sha1").update(issue.url).digest("hex"),
+        JSON.stringify(issue), issue.updated_at, isProject ? 1 : 0, state
+      ], function(error, rows) {
+        self.cacheComments(issue, stepCb);
+      }
+    );
   });
 };
 function checkGithub(cbDone) {
